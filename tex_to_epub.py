@@ -5,18 +5,43 @@ from ebooklib import epub
 import subprocess
 import re
 
-def convert_tex_to_html(tex_file, template=None):
-    """Converts a LaTeX file to HTML using pandoc, with optional template support."""
+def convert_tex_to_html(tex_file, template=None, extract_media=False):
+    """Converts a LaTeX file to HTML using pandoc, with optional template and media extraction support."""
     output_html = tex_file.replace(".tex", ".html")
     command = ["pandoc", tex_file, "-o", output_html]
+
+    # Add optional template
     if template:
         command.extend(["--template", template])
+
+    # Add media extraction option
+    if extract_media:
+        media_dir = tex_file.replace(".tex", "_media")
+        command.extend(["--extract-media", media_dir])
+
     try:
         subprocess.run(command, check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error converting {tex_file} to HTML: {e}")
-        return None
-    return output_html
+        return None, None
+
+    return output_html, media_dir if extract_media else None
+
+def add_media_to_epub(media_dir, book):
+    """Adds media files from the specified directory to the ePub book."""
+    if not media_dir or not Path(media_dir).is_dir():
+        return
+
+    for media_file in Path(media_dir).glob("**/*"):
+        with open(media_file, "rb") as file:
+            epub_item = epub.EpubItem(
+                uid=media_file.name,
+                file_name=str(media_file.relative_to(media_dir)),
+                media_type=f"image/{media_file.suffix[1:]}",
+                content=file.read()
+            )
+            book.add_item(epub_item)
+
 
 def convert_tex_to_epub(config_path):
     # Load configuration
@@ -26,6 +51,7 @@ def convert_tex_to_epub(config_path):
     cover_path = config.get("cover")
     materials = config.get("materials", [])
     template = config.get("template")
+    extract_media = config.get("extractMedia", False)
 
     if not materials:
         raise ValueError("No materials specified in the configuration file.")
@@ -50,7 +76,7 @@ def convert_tex_to_epub(config_path):
             continue
 
         # Convert LaTeX to HTML
-        html_file = convert_tex_to_html(tex_file, template=template)
+        html_file, media_dir = convert_tex_to_html(tex_file, template=template, extract_media=extract_media)
         if not html_file or not Path(html_file).is_file():
             print(f"Warning: Failed to convert '{tex_file}' to HTML. Skipping.")
             continue
@@ -65,6 +91,10 @@ def convert_tex_to_epub(config_path):
         )
         chapter.content = html_content
         book.add_item(chapter)
+
+        # Add media files to ePub
+        if extract_media:
+            add_media_to_epub(media_dir, book)
 
         # Add to book spine
         book.spine.append(chapter)
