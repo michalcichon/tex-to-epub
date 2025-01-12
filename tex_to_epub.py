@@ -4,6 +4,44 @@ from pathlib import Path
 from ebooklib import epub
 import subprocess
 import re
+from pdf2image import convert_from_path
+from PIL import Image
+
+def convert_pdf_to_jpeg(pdf_path, output_dir):
+    """Converts a PDF to JPEG images and saves them in the specified directory."""
+    output_images = []
+    try:
+        images = convert_from_path(pdf_path)
+        for i, image in enumerate(images):
+            output_file = Path(output_dir) / f"{Path(pdf_path).stem}_page_{i + 1}.jpeg"
+            image.save(output_file, "JPEG")
+            output_images.append(output_file)
+    except Exception as e:
+        print(f"Error converting PDF '{pdf_path}' to JPEG: {e}")
+    return output_images
+
+def replace_pdf_with_images(html_content, media_dir):
+    """Replaces PDF references in HTML with corresponding JPEG images."""
+    def replace_match(match):
+        pdf_file = match.group(1)
+        pdf_path = Path(media_dir) / pdf_file
+        if not pdf_path.is_file():
+            return match.group(0)  # Leave the original content if the PDF file doesn't exist
+
+        jpeg_images = convert_pdf_to_jpeg(pdf_path, media_dir)
+        if not jpeg_images:
+            return match.group(0)  # Leave the original content if conversion fails
+
+        # Generate HTML for the JPEG images
+        image_tags = "".join(
+            f'<img src="{img.relative_to(media_dir)}" alt="PDF page {i + 1}">'
+            for i, img in enumerate(jpeg_images)
+        )
+        return image_tags
+
+    # Find and replace PDF placeholders in the HTML content
+    pdf_pattern = re.compile(r'<span class="image placeholder".*?data-original-image-src="(.*?)".*?>.*?</span>')
+    return pdf_pattern.sub(replace_match, html_content)
 
 def convert_tex_to_html(tex_file, template=None, extract_media=False, debug=False, log_file=None):
     """Converts a LaTeX file to HTML using pandoc, with optional template and media extraction support."""
@@ -114,6 +152,10 @@ def convert_tex_to_epub(config_path):
 
         with open(html_file, 'r', encoding='utf-8') as file:
             html_content = file.read()
+
+        # Replace PDF placeholders with images in HTML
+        if extract_media:
+            html_content = replace_pdf_with_images(html_content, media_dir)
 
         chapter = epub.EpubHtml(
             title=f"Chapter {index + 1}",

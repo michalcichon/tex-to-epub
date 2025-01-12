@@ -1,6 +1,6 @@
 # tex-to-epub Converter
 
-This script converts `.tex` files to an ePub format using `pandoc` for LaTeX-to-HTML conversion and the `ebooklib` library to generate ePub files. It supports configuring the cover image, ordering the materials, using a custom template, optionally extracting media files (e.g., images), and generating debug logs.
+This script converts `.tex` files to an ePub format using `pandoc` for LaTeX-to-HTML conversion and the `ebooklib` library to generate ePub files. It supports configuring the cover image, ordering the materials, using a custom template, optionally extracting media files (e.g., images), and generating debug logs. Additionally, it handles the conversion of PDF files to images (e.g., JPEG) for embedding in the ePub.
 
 ## Dependencies
 
@@ -11,7 +11,7 @@ Ensure you have the following dependencies installed:
 Install required Python libraries using pip:
 
 ```bash
-pip install ebooklib
+pip install ebooklib pdf2image
 ```
 
 ### External Tools
@@ -31,7 +31,28 @@ pip install ebooklib
        choco install pandoc
        ```
 
-2. Ensure `pandoc` is accessible from your system's PATH.
+2. **Poppler**: Required by `pdf2image` to process PDF files.
+   - **macOS:**
+     ```bash
+     brew install poppler
+     ```
+   - **Linux (Debian/Ubuntu):**
+     ```bash
+     sudo apt install poppler-utils
+     ```
+   - **Windows:**
+     1. Download Poppler for Windows from [here](https://github.com/oschwartz10612/poppler-windows/releases/).
+     2. Extract the archive and add the `bin` folder to your system's PATH.
+
+### Verifying Installation
+
+To confirm that `pdf2image` and Poppler are installed correctly, you can run:
+
+```python
+from pdf2image import convert_from_path
+images = convert_from_path("example.pdf")
+print(f"Converted {len(images)} pages from PDF to images.")
+```
 
 ## Usage
 
@@ -115,18 +136,22 @@ The script processes the `.tex` files, converts them to HTML using `pandoc`, and
 1. **Error: `pandoc` not found**:
    - Ensure `pandoc` is installed and added to your system's PATH.
 
-2. **Warnings about missing files**:
+2. **Error: `ModuleNotFoundError: No module named 'pdf2image'`**:
+   - Install the library using `pip install pdf2image`.
+   - Ensure Poppler is installed and accessible (see dependencies).
+
+3. **Warnings about missing files**:
    - Double-check the paths in `config.json` and ensure the files exist.
 
-3. **Issues with LaTeX syntax**:
+4. **Issues with LaTeX syntax**:
    - Ensure the `.tex` files are valid and supported by `pandoc`.
 
-4. **Images not appearing in ePub**:
+5. **Images not appearing in ePub**:
    - Ensure `extractMedia` is set to `true` in the configuration file.
    - Verify that the image paths in the `.tex` files are correct and the files exist.
 
-5. **Debugging output**:
+6. **Debugging output**:
    - Check the log file (`<config-name>.log`) for detailed information on the conversion process.
 
-For further assistance, feel free to contact the maintainer or consult the documentation for `pandoc` and `ebooklib`.
+For further assistance, feel free to contact the maintainer or consult the documentation for `pandoc`, `ebooklib`, and `pdf2image`.
 
