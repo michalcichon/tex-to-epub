@@ -4,44 +4,44 @@ from pathlib import Path
 from ebooklib import epub
 import subprocess
 import re
-from pdf2image import convert_from_path
-from PIL import Image
+from shutil import copyfile
 
-def convert_pdf_to_jpeg(pdf_path, output_dir):
-    """Converts a PDF to JPEG images and saves them in the specified directory."""
-    output_images = []
+def copy_image_to_html_dir(image_path, html_dir):
+    """Copies an image to the HTML directory and returns the new relative path."""
+    html_image_path = Path(html_dir) / Path(image_path).name
     try:
-        images = convert_from_path(pdf_path)
-        for i, image in enumerate(images):
-            output_file = Path(output_dir) / f"{Path(pdf_path).stem}_page_{i + 1}.jpeg"
-            image.save(output_file, "JPEG")
-            output_images.append(output_file)
+        copyfile(image_path, html_image_path)
+        return html_image_path
     except Exception as e:
-        print(f"Error converting PDF '{pdf_path}' to JPEG: {e}")
-    return output_images
+        print(f"Error copying image {image_path} to {html_image_path}: {e}")
+        return None
 
-def replace_pdf_with_images(html_content, media_dir):
-    """Replaces PDF references in HTML with corresponding JPEG images."""
+def replace_image_references_in_html(html_content, media_dir, tex_dir, html_dir):
+    """Replaces LaTeX image references in HTML with proper <img> tags."""
     def replace_match(match):
-        pdf_file = match.group(1)
-        pdf_path = Path(media_dir) / pdf_file
-        if not pdf_path.is_file():
-            return match.group(0)  # Leave the original content if the PDF file doesn't exist
+        image_file = match.group(1)
 
-        jpeg_images = convert_pdf_to_jpeg(pdf_path, media_dir)
-        if not jpeg_images:
-            return match.group(0)  # Leave the original content if conversion fails
+        # Check in media_dir first
+        image_path = Path(media_dir) / image_file if media_dir else None
+        if not image_path or not image_path.is_file():
+            # Fallback to the directory containing the .tex file
+            image_path = Path(tex_dir) / image_file
 
-        # Generate HTML for the JPEG images
-        image_tags = "".join(
-            f'<img src="{img.relative_to(media_dir)}" alt="PDF page {i + 1}">'
-            for i, img in enumerate(jpeg_images)
-        )
-        return image_tags
+        if not image_path.is_file():
+            print(f"Warning: Image file '{image_file}' not found in media directory or tex directory.")
+            return match.group(0)  # Leave original if image file is missing
 
-    # Find and replace PDF placeholders in the HTML content
-    pdf_pattern = re.compile(r'<span class="image placeholder".*?data-original-image-src="(.*?)".*?>.*?</span>')
-    return pdf_pattern.sub(replace_match, html_content)
+        # Copy image to HTML directory
+        copied_image_path = copy_image_to_html_dir(image_path, html_dir)
+        if not copied_image_path:
+            return match.group(0)  # Leave original if copy fails
+
+        # Generate proper <img> tag
+        return f'<img src="{copied_image_path.name}" alt="Image">'
+
+    # Replace placeholders in HTML
+    image_pattern = re.compile(r'data-original-image-src="(.*?)"')
+    return image_pattern.sub(replace_match, html_content)
 
 def convert_tex_to_html(tex_file, template=None, extract_media=False, debug=False, log_file=None):
     """Converts a LaTeX file to HTML using pandoc, with optional template and media extraction support."""
@@ -53,6 +53,7 @@ def convert_tex_to_html(tex_file, template=None, extract_media=False, debug=Fals
         command.extend(["--template", template])
 
     # Add media extraction option
+    media_dir = None
     if extract_media:
         media_dir = tex_file.replace(".tex", "_media")
         command.extend(["--extract-media", media_dir])
@@ -68,7 +69,7 @@ def convert_tex_to_html(tex_file, template=None, extract_media=False, debug=Fals
                 log.write(f"Error converting {tex_file} to HTML: {e}\n")
         return None, None
 
-    return output_html, media_dir if extract_media else None
+    return output_html, media_dir
 
 def add_media_to_epub(media_dir, book):
     """Adds media files from the specified directory to the ePub book."""
@@ -79,7 +80,7 @@ def add_media_to_epub(media_dir, book):
         with open(media_file, "rb") as file:
             epub_item = epub.EpubItem(
                 uid=media_file.name,
-                file_name=str(media_file.relative_to(media_dir)),
+                file_name=str(media_file.name),
                 media_type=f"image/{media_file.suffix[1:]}",
                 content=file.read()
             )
@@ -153,9 +154,9 @@ def convert_tex_to_epub(config_path):
         with open(html_file, 'r', encoding='utf-8') as file:
             html_content = file.read()
 
-        # Replace PDF placeholders with images in HTML
-        if extract_media:
-            html_content = replace_pdf_with_images(html_content, media_dir)
+        # Replace image placeholders in HTML
+        tex_dir = Path(tex_file).parent
+        html_content = replace_image_references_in_html(html_content, media_dir, tex_dir, html_dir)
 
         chapter = epub.EpubHtml(
             title=f"Chapter {index + 1}",
