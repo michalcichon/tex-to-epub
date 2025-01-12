@@ -5,13 +5,14 @@ from ebooklib import epub
 import subprocess
 import re
 
-def convert_tex_to_html(tex_file):
-    """Converts a LaTeX file to HTML using pandoc."""
+def convert_tex_to_html(tex_file, template=None):
+    """Converts a LaTeX file to HTML using pandoc, with optional template support."""
     output_html = tex_file.replace(".tex", ".html")
+    command = ["pandoc", tex_file, "-o", output_html]
+    if template:
+        command.extend(["--template", template])
     try:
-        subprocess.run([
-            "pandoc", tex_file, "-o", output_html
-        ], check=True)
+        subprocess.run(command, check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error converting {tex_file} to HTML: {e}")
         return None
@@ -24,6 +25,7 @@ def convert_tex_to_epub(config_path):
 
     cover_path = config.get("cover")
     materials = config.get("materials", [])
+    template = config.get("template")
 
     if not materials:
         raise ValueError("No materials specified in the configuration file.")
@@ -48,7 +50,7 @@ def convert_tex_to_epub(config_path):
             continue
 
         # Convert LaTeX to HTML
-        html_file = convert_tex_to_html(tex_file)
+        html_file = convert_tex_to_html(tex_file, template=template)
         if not html_file or not Path(html_file).is_file():
             print(f"Warning: Failed to convert '{tex_file}' to HTML. Skipping.")
             continue
