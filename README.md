@@ -1,6 +1,6 @@
 # tex-to-epub Converter
 
-This script converts `.tex` files to an ePub format using `pandoc` for LaTeX-to-HTML conversion and the `ebooklib` library to generate ePub files. It supports configuring the cover image, ordering the materials, using a custom template, and optionally extracting media files (e.g., images) to include them in the final ePub.
+This script converts `.tex` files to an ePub format using `pandoc` for LaTeX-to-HTML conversion and the `ebooklib` library to generate ePub files. It supports configuring the cover image, ordering the materials, using a custom template, optionally extracting media files (e.g., images), and generating debug logs.
 
 ## Dependencies
 
@@ -37,7 +37,7 @@ pip install ebooklib
 
 ### Prepare the Configuration File
 
-The script uses a JSON configuration file to specify the cover image, LaTeX files to include, optional template, and media extraction. The configuration file should follow this structure:
+The script uses a JSON configuration file to specify the cover image, LaTeX files to include, optional template, media extraction, and debug mode. The configuration file should follow this structure:
 
 ```json
 {
@@ -47,7 +47,8 @@ The script uses a JSON configuration file to specify the cover image, LaTeX file
         "path/to/file2.tex"
     ],
     "template": "path/to/template.html",
-    "extractMedia": true
+    "extractMedia": true,
+    "debug": true
 }
 ```
 
@@ -55,6 +56,9 @@ The script uses a JSON configuration file to specify the cover image, LaTeX file
 - **`materials`**: List of `.tex` files to include in the ePub, in the desired order.
 - **`template`**: Path to a custom HTML template for `pandoc` (optional).
 - **`extractMedia`**: Boolean flag to enable or disable extraction of media files (e.g., images). When enabled, `pandoc` will extract media files and the script will embed them into the ePub.
+- **`debug`**: Boolean flag to enable or disable debug mode. When enabled, the script generates:
+  - A log file named `<config-name>.log` with detailed conversion logs.
+  - A directory named `<config-name>-html` containing intermediate HTML files.
 
 ### Run the Script
 
@@ -74,11 +78,14 @@ Enter the path to the configuration JSON file: config.json
 
 ### Output
 
-The script generates an ePub file named `output.epub` in the current working directory. If `extractMedia` is enabled, images and other media referenced in the `.tex` files will also be embedded into the ePub.
+The script generates:
 
-## Example
+- An ePub file named `output.epub` in the current working directory.
+- If `debug` is enabled:
+  - Log file: `<config-name>.log`.
+  - HTML files: Directory `<config-name>-html` containing intermediate HTML files.
 
-### Sample `config.json`
+### Example Configuration
 
 ```json
 {
@@ -88,7 +95,8 @@ The script generates an ePub file named `output.epub` in the current working dir
         "documents/chapter2.tex"
     ],
     "template": "templates/custom_template.html",
-    "extractMedia": true
+    "extractMedia": true,
+    "debug": true
 }
 ```
 
@@ -100,7 +108,7 @@ python tex_to_epub.py
 
 ### Result
 
-The script processes the `.tex` files, converts them to HTML using `pandoc`, and assembles them into an ePub file named `output.epub` with the specified cover and embedded images.
+The script processes the `.tex` files, converts them to HTML using `pandoc`, and assembles them into an ePub file named `output.epub` with the specified cover, embedded images, and optional debug outputs.
 
 ## Troubleshooting
 
@@ -117,4 +125,8 @@ The script processes the `.tex` files, converts them to HTML using `pandoc`, and
    - Ensure `extractMedia` is set to `true` in the configuration file.
    - Verify that the image paths in the `.tex` files are correct and the files exist.
 
+5. **Debugging output**:
+   - Check the log file (`<config-name>.log`) for detailed information on the conversion process.
+
 For further assistance, feel free to contact the maintainer or consult the documentation for `pandoc` and `ebooklib`.
+
