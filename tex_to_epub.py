@@ -8,42 +8,29 @@ from shutil import copyfile
 
 def remove_multicols_html(html_content):
     """
-    Removes extra HTML fragments left by the {multicols} environment in LaTeX.
-    For instance, Pandoc might insert <div class="multicols"><p><span>2</span></p> ... </div>.
-    We want to remove the entire <div> ... </div> and any <p><span>2</span></p> lines.
+    Removes extra HTML fragments left by {multicols} environment in LaTeX.
+    For example, Pandoc might produce <div class="multicols"><p><span>2</span></p> ... </div>.
+    We want to remove such <div> tags and the <p><span>2</span></p> lines.
     """
-    # Remove opening <div class="multicols">
+    # Remove <div class="multicols">
     html_content = html_content.replace('<div class="multicols">', '')
-    # Remove closing </div>
+    # Remove </div>
     html_content = html_content.replace('</div>', '')
-    # Remove lines like <p><span>2</span></p> (could be 2, 3, etc.)
+    # Remove lines like <p><span>2</span></p> (could be 2, 3, ...)
     html_content = re.sub(r'<p><span>\d+</span></p>', '', html_content)
     return html_content
 
-def copy_image_to_html_dir(image_path, html_dir):
-    """
-    Copies an image file to the specified HTML directory and returns the new path.
-    If there's an error, returns None.
-    """
-    html_image_path = Path(html_dir) / Path(image_path).name
-    try:
-        copyfile(image_path, html_image_path)
-        return html_image_path
-    except Exception as e:
-        print(f"Error copying image {image_path} to {html_image_path}: {e}")
-        return None
-
 def convert_pdf_to_jpg(pdf_path, dpi=150, quality=90):
     """
-    Converts the first page of a .pdf file to a .jpg using ImageMagick.
-    Returns the path to the generated .jpg file or None if unsuccessful.
+    Converts the first page of a PDF file to JPG using ImageMagick.
+    In ImageMagick 7, the recommended command is 'magick'.
+    Returns the path to the generated JPG or None if it fails.
     """
     jpg_path = pdf_path.with_suffix(".jpg")
-    # This command overwrites existing jpg_path if it exists
     command = [
-        "convert",
+        "magick",                # instead of "convert" for IMv7
         "-density", str(dpi),
-        str(pdf_path) + "[0]",  # [0] means first page only
+        str(pdf_path) + "[0]",   # [0] = first page only
         "-quality", str(quality),
         str(jpg_path)
     ]
@@ -54,95 +41,88 @@ def convert_pdf_to_jpg(pdf_path, dpi=150, quality=90):
         print(f"Error converting {pdf_path} to JPG: {e}")
         return None
 
-def replace_image_references_in_html(html_content, media_dir, tex_dir, html_dir):
+def replace_image_references_in_html(html_content, media_dir, tex_dir):
     """
-    Replaces Pandoc's image placeholders with <img> tags in the final HTML.
-    Also, if the image file is a PDF, it attempts to convert it to JPEG.
-    
-    Pandoc often produces something like:
-    
-      <span class="image placeholder" data-original-image-src="file.pdf" width="10cm">image</span>
-    
-    We want to replace that with:
-    
-      <img src="file.jpg" alt="image">
-    
-    (if conversion is needed for PDF).
+    Replaces Pandoc's image placeholders <span class="image placeholder" data-original-image-src="...">
+    with <img> tags. If the file is PDF, convert to JPG. 
+    The final images are placed in `media_dir`, so they can be included in the ePub.
     """
-
-    # Regex to match the entire <span> placeholder including all attributes.
-    # We capture the value of data-original-image-src="...".
     pattern = re.compile(
         r'<span\s+class="image placeholder"([^>]*)data-original-image-src="([^"]+)"([^>]*)>(.*?)</span>',
         flags=re.DOTALL
     )
 
     def replace_placeholder(match):
-        # Full matched string (the entire <span...>...</span>)
         whole_span = match.group(0)
-        before_src  = match.group(1)  # attributes before data-original-image-src
-        image_file  = match.group(2)  # the filename from data-original-image-src
-        after_src   = match.group(3)  # attributes after data-original-image-src
-        inner_text  = match.group(4)  # text inside the span (often "image")
+        image_file = match.group(2)
 
-        # Try to find the file in media_dir first, then in the .tex file directory
-        image_path = None
+        # Try to find the file in media_dir first (if Pandoc already extracted it)
+        final_image_path = None
         if media_dir:
             candidate = Path(media_dir) / image_file
             if candidate.is_file():
-                image_path = candidate
-        if not image_path:
+                final_image_path = candidate
+
+        # If not found, check the .tex file directory
+        if not final_image_path:
             candidate = Path(tex_dir) / image_file
             if candidate.is_file():
-                image_path = candidate
+                final_image_path = candidate
 
-        if not image_path or not image_path.is_file():
-            print(f"Warning: Image file '{image_file}' not found. Using placeholder.")
+        if not final_image_path or not final_image_path.is_file():
+            print(f"Warning: Image file '{image_file}' not found.")
             return whole_span
 
-        # Convert PDF to JPG if needed
-        if image_path.suffix.lower() == ".pdf":
-            new_jpg = convert_pdf_to_jpg(image_path)
-            if new_jpg and new_jpg.is_file():
-                image_path = new_jpg
-            else:
+        # If the file is PDF, convert to JPG
+        if final_image_path.suffix.lower() == ".pdf":
+            converted_jpg = convert_pdf_to_jpg(final_image_path)
+            if not converted_jpg or not converted_jpg.is_file():
                 print(f"Warning: Failed to convert '{image_file}' to JPG.")
                 return whole_span
+            final_image_path = converted_jpg
 
-        # If we have a debug HTML directory, copy the image there
-        if html_dir:
-            copied_image_path = copy_image_to_html_dir(image_path, html_dir)
-            if not copied_image_path:
-                return whole_span
-            return f'<img src="{copied_image_path.name}" alt="image">'
-        else:
-            # If html_dir is not used, just reference the original name
-            return f'<img src="{image_path.name}" alt="image">'
+        # Ensure the final image is in media_dir
+        if media_dir:
+            target_path = Path(media_dir) / final_image_path.name
+
+            # Make sure the target subdirectory exists
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # If the file isn't already in that exact location, copy it
+            if target_path != final_image_path:
+                try:
+                    copyfile(final_image_path, target_path)
+                    final_image_path = target_path
+                except Exception as e:
+                    print(f"Error copying image '{final_image_path}' to '{target_path}': {e}")
+                    return whole_span
+
+        # Return <img src="ImageName.jpg">
+        return f'<img src="{final_image_path.name}" alt="image">'
 
     new_html = pattern.sub(replace_placeholder, html_content)
     return new_html
 
 def convert_tex_to_html(tex_file, template=None, extract_media=False, debug=False, log_file=None):
     """
-    Converts a LaTeX (.tex) file to HTML via Pandoc.
-    Optionally uses a template and extracts media resources into a separate folder.
+    Converts a .tex file to HTML via Pandoc.
+    If extract_media=True, uses --extract-media to place images into a separate folder.
     """
     output_html = tex_file.replace(".tex", ".html")
     command = ["pandoc", tex_file, "-o", output_html]
 
-    # If template is specified, use it
     if template:
         command.extend(["--template", template])
 
-    # If we want to extract media, define a media directory for Pandoc
     media_dir = None
     if extract_media:
+        # Pandoc will place images here
         media_dir = tex_file.replace(".tex", "_media")
         command.extend(["--extract-media", media_dir])
 
     try:
         subprocess.run(
-            command, 
+            command,
             check=True,
             stdout=subprocess.PIPE if debug else subprocess.DEVNULL,
             stderr=subprocess.PIPE if debug else subprocess.DEVNULL
@@ -160,8 +140,8 @@ def convert_tex_to_html(tex_file, template=None, extract_media=False, debug=Fals
 
 def add_media_to_epub(media_dir, book):
     """
-    Adds image files from the specified media directory to the ePub book.
-    Only certain file extensions are processed (jpg, png, etc.).
+    Scans `media_dir` and adds recognized image files to the ePub
+    (jpg, jpeg, png, gif, svg).
     """
     if not media_dir or not Path(media_dir).is_dir():
         return
@@ -169,21 +149,23 @@ def add_media_to_epub(media_dir, book):
     for media_file in Path(media_dir).glob("**/*"):
         suffix_lower = media_file.suffix.lower().strip(".")
         if suffix_lower in ["jpg", "jpeg", "png", "gif", "svg"]:
-            with open(media_file, "rb") as file:
+            with open(media_file, "rb") as f:
                 epub_item = epub.EpubItem(
                     uid=media_file.name,
-                    file_name=str(media_file.name),
+                    file_name=media_file.name,  # or e.g. "images/filename"
                     media_type=f"image/{suffix_lower}",
-                    content=file.read()
+                    content=f.read()
                 )
                 book.add_item(epub_item)
 
 def convert_tex_to_epub(config_path):
     """
-    Main function to read a configuration JSON file and convert multiple .tex files
-    into a single ePub. Applies the functions above to handle images, remove multicols, etc.
+    Reads a JSON config and converts multiple .tex files into one .epub.
+    - Possibly uses a cover image,
+    - Uses remove_multicols_html() to remove {multicols} artifacts,
+    - Replaces image placeholders with <img> tags (and converts PDFs to JPG),
+    - Ensures all images end up in media_dir, which is then added to ePub.
     """
-    # Read config
     with open(config_path, 'r') as config_file:
         config = json.load(config_file)
 
@@ -196,7 +178,7 @@ def convert_tex_to_epub(config_path):
     if not materials:
         raise ValueError("No materials specified in the configuration file.")
 
-    # Set up logging if debug is enabled
+    # Prepare debug logging if needed
     log_file = None
     if debug:
         log_file = f"{Path(config_path).stem}.log"
@@ -209,7 +191,7 @@ def convert_tex_to_epub(config_path):
     book.set_title("Generated ePub")
     book.set_language("en")
 
-    # Add cover if specified and exists
+    # Add cover if exists
     if cover_path and Path(cover_path).is_file():
         with open(cover_path, 'rb') as cover_file:
             book.set_cover("cover.jpg", cover_file.read())
@@ -219,7 +201,7 @@ def convert_tex_to_epub(config_path):
             with open(log_file, "a") as log:
                 log.write("Warning: Cover file not found.\n")
 
-    # Optional directory to store debug HTML files
+    # Optional directory to store debug .html
     html_dir = None
     if debug:
         html_dir = f"{Path(config_path).stem}-html"
@@ -234,12 +216,12 @@ def convert_tex_to_epub(config_path):
                     log.write(f"Warning: File '{tex_file}' not found. Skipping.\n")
             continue
 
-        # Convert .tex to .html using Pandoc
+        # Convert .tex -> .html with Pandoc
         html_file, media_dir = convert_tex_to_html(
-            tex_file, 
-            template=template, 
-            extract_media=extract_media, 
-            debug=debug, 
+            tex_file,
+            template=template,
+            extract_media=extract_media,
+            debug=debug,
             log_file=log_file
         )
         if not html_file or not Path(html_file).is_file():
@@ -249,27 +231,22 @@ def convert_tex_to_epub(config_path):
                     log.write(f"Warning: Failed to convert '{tex_file}' to HTML.\n")
             continue
 
-        # If debugging, move the generated HTML into the debug directory
-        if debug:
+        # Move the generated .html to the debug folder if needed
+        if debug and html_dir:
             debug_html_path = Path(html_dir) / Path(html_file).name
             Path(html_file).rename(debug_html_path)
             html_file = debug_html_path
 
-        # Read the HTML file
+        # Read the generated HTML
         with open(html_file, 'r', encoding='utf-8') as file:
             html_content = file.read()
 
-        # Remove <div> and <span> from the {multicols} environment
+        # Remove multicols markup
         html_content = remove_multicols_html(html_content)
 
-        # Replace image placeholders with <img> tags
+        # Replace placeholders with <img> and handle PDF->JPG
         tex_dir = Path(tex_file).parent
-        html_content = replace_image_references_in_html(
-            html_content,
-            media_dir,
-            tex_dir,
-            html_dir
-        )
+        html_content = replace_image_references_in_html(html_content, media_dir, tex_dir)
 
         # Create an ePub chapter
         chapter = epub.EpubHtml(
@@ -280,14 +257,14 @@ def convert_tex_to_epub(config_path):
         chapter.content = html_content
         book.add_item(chapter)
 
-        # Add extracted images to the ePub if extract_media is True
+        # Add the chapter to the spine
+        book.spine.append(chapter)
+
+        # Finally, add images from media_dir to the ePub
         if extract_media:
             add_media_to_epub(media_dir, book)
 
-        # Add chapter to the spine
-        book.spine.append(chapter)
-
-    # Add default navigation files
+    # Add default navigation
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
 
